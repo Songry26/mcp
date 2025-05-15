@@ -9,104 +9,314 @@
 # OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions
 # and limitations under the License.
 
-"""awslabs msk MCP Server implementation."""
+"""awslabs AWS MSK MCP Server implementation."""
 
 import argparse
+import boto3
+import os
+import sys
 from loguru import logger
-from mcp.server.fastmcp import FastMCP
-from typing import Literal
+from mcp.server.fastmcp import Context, FastMCP
+from pydantic import Field
+from typing import Any, Dict, List
 
+
+# Set up logging
+logger.remove()
+logger.add(sys.stderr, level=os.getenv('FASTMCP_LOG_LEVEL', 'WARNING'))
 
 mcp = FastMCP(
     'awslabs.msk-mcp-server',
-    instructions='Instructions for using this msk MCP server. This can be used by clients to improve the LLM'
-    's understanding of available tools, resources, etc. It can be thought of like a '
-    'hint'
-    ' to the model. For example, this information MAY be added to the system prompt. Important to be clear, direct, and detailed.',
+    instructions="""
+    # AWS MSK MCP Server
+
+    This server provides tools to interact with Amazon Managed Streaming for Apache Kafka (MSK) clusters.
+
+    ## Prerequisites
+
+    1. AWS credentials configured with access to Amazon MSK
+    2. Configure AWS credentials using ada (environment variables not set up)
+    3. Ensure your IAM role/user has permissions to use Amazon MSK
+
+    ## Best Practices
+
+    - Use ListClusters to get an overview of all MSK clusters in your region
+    - Use GetClusterInfo to get detailed information about a specific cluster
+    - Use GetBrokerInfo to understand the broker configuration and status
+    - Always check cluster and broker status before performing operations
+    - Monitor broker health through the status information
+
+    ## Tool Selection Guide
+
+    - Use ListClusters when: You need to see all available MSK clusters
+    - Use GetClusterInfo when: You need detailed information about a specific cluster
+    - Use GetBrokerInfo when: You need to check broker health or configuration
+
+    ## Configuration
+
+    The server uses the AWS profile specified in AWS_PROFILE environment variable.
+    If not provided, it defaults to the "default" profile.
+    """,
     dependencies=[
         'pydantic',
         'loguru',
+        'boto3',
     ],
 )
 
 
-@mcp.tool(name='ExampleTool')
-async def example_tool(
-    query: str,
-) -> str:
-    """Example tool implementation.
+@mcp.tool()
+async def list_clusters(
+    ctx: Context,
+) -> List[Dict[str, Any]]:
+    """List all MSK clusters in the current AWS region.
 
-    Replace this with your own tool implementation.
-    """
-    project_name = 'awslabs msk MCP Server'
-    return (
-        f"Hello from {project_name}! Your query was {query}. Replace this with your tool's logic"
-    )
+    ## Usage
 
+    This tool retrieves a list of all MSK clusters in your AWS region.
+    Use it to get an overview of your MSK infrastructure.
 
-@mcp.tool(name='MathTool')
-async def math_tool(
-    operation: Literal['add', 'subtract', 'multiply', 'divide'],
-    a: int | float,
-    b: int | float,
-) -> int | float:
-    """Math tool implementation.
+    ## Output Format
 
-    This tool supports the following operations:
-    - add
-    - subtract
-    - multiply
-    - divide
+    Returns a list of dictionaries, each containing:
+    - ClusterName: Name of the cluster
+    - ClusterArn: ARN of the cluster
+    - Status: Current status of the cluster (ACTIVE, CREATING, UPDATING, etc.)
+    - CreationTime: When the cluster was created (ISO format)
 
-    Parameters:
-        operation (Literal["add", "subtract", "multiply", "divide"]): The operation to perform.
-        a (int): The first number.
-        b (int): The second number.
+    ## Example Response
+
+    ```json
+    [
+        {
+            "ClusterName": "my-kafka-cluster",
+            "ClusterArn": "arn:aws:kafka:us-west-2:123456789012:cluster/my-kafka-cluster/abcd1234-...",
+            "Status": "ACTIVE",
+            "CreationTime": "2023-01-01T00:00:00Z"
+        }
+    ]
+    ```
+
+    Args:
+        ctx: MCP context for logging and error handling
 
     Returns:
-        The result of the operation.
+        List of dictionaries containing cluster information
     """
-    match operation:
-        case 'add':
-            return a + b
-        case 'subtract':
-            return a - b
-        case 'multiply':
-            return a * b
-        case 'divide':
-            try:
-                return a / b
-            except ZeroDivisionError:
-                raise ValueError(f'The denominator {b} cannot be zero.')
-        case _:
-            raise ValueError(
-                f'Invalid operation: {operation} (must be one of: add, subtract, multiply, divide)'
-            )
+    logger.debug('Listing MSK clusters')
+    try:
+        kafka_client = boto3.client('kafka')
+        response = kafka_client.list_clusters()
+        clusters = response.get('ClusterInfoList', [])
+
+        result = [
+            {
+                'ClusterName': cluster.get('ClusterName'),
+                'ClusterArn': cluster.get('ClusterArn'),
+                'Status': cluster.get('State'),
+                'CreationTime': cluster.get('CreationTime').isoformat()
+                if cluster.get('CreationTime')
+                else None,
+            }
+            for cluster in clusters
+        ]
+
+        logger.debug(f'Found {len(result)} MSK clusters')
+        return result
+    except Exception as e:
+        error_msg = f'Failed to list MSK clusters: {str(e)}'
+        logger.error(error_msg)
+        await ctx.error(error_msg)
+        raise ValueError(error_msg)
+
+
+@mcp.tool()
+async def get_cluster_info(
+    ctx: Context,
+    cluster_arn: str = Field(description='The ARN of the cluster to describe'),
+) -> Dict[str, Any]:
+    """Get detailed information about a specific MSK cluster.
+
+    ## Usage
+
+    This tool retrieves detailed information about a specific MSK cluster.
+    Use it to understand the cluster's configuration and current state.
+
+    ## Output Format
+
+    Returns a dictionary containing:
+    - ClusterName: Name of the cluster
+    - Status: Current status of the cluster
+    - BrokerCount: Number of broker nodes
+    - ZookeeperConnectString: Zookeeper connection string
+    - BootstrapBrokerString: Bootstrap broker connection string
+    - EncryptionInfo: Encryption settings
+    - EnhancedMonitoring: Monitoring level
+    - Tags: Cluster tags
+    - CreationTime: When the cluster was created
+
+    ## Example Response
+
+    ```json
+    {
+        "ClusterName": "my-kafka-cluster",
+        "Status": "ACTIVE",
+        "BrokerCount": 3,
+        "ZookeeperConnectString": "z-1.my-kafka-cluster.123456.kafka.us-west-2.amazonaws.com:2181",
+        "BootstrapBrokerString": "b-1.my-kafka-cluster.123456.kafka.us-west-2.amazonaws.com:9092",
+        "EncryptionInfo": {
+            "EncryptionAtRest": {"DataVolumeKMSKeyId": "arn:aws:kms:..."},
+            "EncryptionInTransit": {"ClientBroker": "TLS"}
+        },
+        "EnhancedMonitoring": "DEFAULT",
+        "Tags": {},
+        "CreationTime": "2023-01-01T00:00:00Z"
+    }
+    ```
+
+    Args:
+        ctx: MCP context for logging and error handling
+        cluster_arn: The ARN of the cluster to describe
+
+    Returns:
+        Dictionary containing detailed cluster information
+    """
+    logger.debug(f'Getting info for MSK cluster: {cluster_arn}')
+    try:
+        kafka_client = boto3.client('kafka')
+        response = kafka_client.describe_cluster(ClusterArn=cluster_arn)
+        cluster_info = response.get('ClusterInfo', {})
+
+        # Get broker information
+        broker_response = kafka_client.get_bootstrap_brokers(ClusterArn=cluster_arn)
+
+        result = {
+            'ClusterName': cluster_info.get('ClusterName'),
+            'Status': cluster_info.get('State'),
+            'BrokerCount': len(
+                cluster_info.get('BrokerNodeInfo', {}).get('BrokerNodeInfoList', [])
+            ),
+            'ZookeeperConnectString': cluster_info.get('ZookeeperConnectString'),
+            'BootstrapBrokerString': broker_response.get('BootstrapBrokerString'),
+            'EncryptionInfo': cluster_info.get('EncryptionInfo'),
+            'EnhancedMonitoring': cluster_info.get('EnhancedMonitoring'),
+            'Tags': cluster_info.get('Tags', {}),
+            'CreationTime': cluster_info.get('CreationTime').isoformat()
+            if cluster_info.get('CreationTime')
+            else None,
+        }
+
+        logger.debug(f'Successfully retrieved info for cluster {result["ClusterName"]}')
+        return result
+    except Exception as e:
+        error_msg = f'Failed to get cluster info: {str(e)}'
+        logger.error(error_msg)
+        await ctx.error(error_msg)
+        raise ValueError(error_msg)
+
+
+@mcp.tool()
+async def get_broker_info(
+    ctx: Context,
+    cluster_arn: str = Field(description='The ARN of the cluster whose brokers to describe'),
+) -> List[Dict[str, Any]]:
+    """Get information about all brokers in a specific MSK cluster.
+
+    ## Usage
+
+    This tool retrieves information about all broker nodes in an MSK cluster.
+    Use it to monitor broker health and understand the cluster's infrastructure.
+
+    ## Output Format
+
+    Returns a list of dictionaries, each containing:
+    - BrokerId: ID of the broker
+    - BrokerType: Type of broker instance (SYNC or ASYNC)
+    - InstanceType: EC2 instance type (e.g., kafka.m5.large)
+    - ClientSubnet: Subnet where the broker is located
+    - SecurityGroups: List of security groups
+    - Status: Current status of the broker
+
+    ## Example Response
+
+    ```json
+    [
+        {
+            "BrokerId": 1,
+            "BrokerType": "SYNC",
+            "InstanceType": "kafka.m5.large",
+            "ClientSubnet": "subnet-12345678",
+            "SecurityGroups": ["sg-12345678"],
+            "Status": "ACTIVE"
+        }
+    ]
+    ```
+
+    ## Status Codes
+
+    Common broker status codes:
+    - ACTIVE: Broker is running normally
+    - CREATING: Broker is being created
+    - UPDATING: Broker is being updated
+    - MAINTENANCE: Broker is undergoing maintenance
+    - REBOOTING: Broker is rebooting
+    - INACTIVE: Broker is not active
+
+    Args:
+        ctx: MCP context for logging and error handling
+        cluster_arn: The ARN of the cluster whose brokers to describe
+
+    Returns:
+        List of dictionaries containing broker information
+    """
+    logger.debug(f'Getting broker info for MSK cluster: {cluster_arn}')
+    try:
+        kafka_client = boto3.client('kafka')
+        response = kafka_client.describe_cluster(ClusterArn=cluster_arn)
+        cluster_info = response.get('ClusterInfo', {})
+        broker_info = cluster_info.get('BrokerNodeInfo', {}).get('BrokerNodeInfoList', [])
+
+        result = [
+            {
+                'BrokerId': broker.get('BrokerId'),
+                'BrokerType': broker.get('BrokerType'),
+                'InstanceType': broker.get('InstanceType'),
+                'ClientSubnet': broker.get('ClientSubnet'),
+                'SecurityGroups': broker.get('SecurityGroups', []),
+                'Status': broker.get('BrokerState', {}).get('Code'),
+            }
+            for broker in broker_info
+        ]
+
+        logger.debug(f'Found {len(result)} brokers in cluster')
+        return result
+    except Exception as e:
+        error_msg = f'Failed to get broker info: {str(e)}'
+        logger.error(error_msg)
+        await ctx.error(error_msg)
+        raise ValueError(error_msg)
 
 
 def main():
     """Run the MCP server with CLI argument support."""
     parser = argparse.ArgumentParser(
-        description='A Model Context Protocol (MCP) Server for AWS MSK'
+        description='An AWS Labs Model Context Protocol (MCP) server for AWS MSK'
     )
     parser.add_argument('--sse', action='store_true', help='Use SSE transport')
     parser.add_argument('--port', type=int, default=8888, help='Port to run the server on')
 
     args = parser.parse_args()
 
-    logger.trace('A trace message.')
-    logger.debug('A debug message.')
-    logger.info('An info message.')
-    logger.success('A success message.')
-    logger.warning('A warning message.')
-    logger.error('An error message.')
-    logger.critical('A critical message.')
+    # Log startup information
+    logger.info('Starting AWS MSK MCP Server')
 
     # Run server with appropriate transport
     if args.sse:
+        logger.info(f'Using SSE transport on port {args.port}')
         mcp.settings.port = args.port
         mcp.run(transport='sse')
     else:
+        logger.info('Using standard stdio transport')
         mcp.run()
 
 
