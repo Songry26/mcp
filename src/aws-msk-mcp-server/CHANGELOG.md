@@ -8,5 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- Functionality for List Clusters, Get Cluster Info, and Get Broker Info
+- Testing for above functionality
+- Environment requirements
+- Proper error handling and logging
+- Context parameter support for all tools
+- JSON response examples in documentation
 
+### Removed
+- Template Functionalities and tests
+
+## [0.0.0] - 2025-05-15
+
+### Added
 - Initial project setup

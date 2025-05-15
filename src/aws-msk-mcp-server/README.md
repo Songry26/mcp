@@ -1,46 +1,104 @@
-# AWS Labs msk MCP Server
+# AWS Labs MSK MCP Server
 
-A Model Context Protocol (MCP) Server for AWS Kafka
+A Model Context Protocol (MCP) Server for AWS MSK (Managed Streaming for Apache Kafka).
 
-## Instructions
+## Overview
 
-Instructions for using this msk MCP server. This can be used by clients to improve the LLM's understanding of available tools, resources, etc. It can be thought of like a 'hint' to the model. For example, this information MAY be added to the system prompt. Important to be clear, direct, and detailed.
+This MCP server provides tools to interact with Amazon MSK clusters through a standardized interface. It allows you to list clusters, retrieve detailed cluster information, and get broker details.
 
-## TODO (REMOVE AFTER COMPLETING)
+## Prerequisites
 
-* [ ] Optionally add an ["RFC issue"](https://github.com/awslabs/mcp/issues) for the community to review
-* [ ] Generate a `uv.lock` file with `uv sync` -> See [Getting Started](https://docs.astral.sh/uv/getting-started/)
-* [ ] Remove the example tools in `./awslabs/msk_mcp_server/server.py`
-* [ ] Add your own tool(s) following the [DESIGN_GUIDELINES.md](https://github.com/awslabs/mcp/blob/main/DESIGN_GUIDELINES.md)
-* [ ] Keep test coverage at or above the `main` branch - NOTE: GitHub Actions run this command for CodeCov metrics `uv run --frozen pytest --cov --cov-branch --cov-report=term-missing`
-* [ ] Document the MCP Server in this "README.md"
-* [ ] Add a section for this msk MCP Server at the top level of this repository "../../README.md"
-* [ ] Create the "../../doc/servers/msk-mcp-server.md" file with these contents:
+1. AWS credentials configured with access to Amazon MSK
+2. Python 3.10 or later
+3. Required Python packages (installed via uv):
+   - loguru>=0.7.0
+   - mcp[cli]>=1.6.0
+   - pydantic>=2.10.6
+   - boto3>=1.34.0
 
-    ```markdown
-    ---
-    title: msk MCP Server
-    ---
+## Installation
 
-    {% include "../../src/msk-mcp-server/README.md" %}
-    ```
+```bash
+# Using uv (recommended)
+uv pip install -e .
+```
 
-* [ ] Reference within the "../../doc/index.md" like this:
+## Available Tools
 
-    ```markdown
-    ### msk MCP Server
+### ListClusters
 
-    A Model Context Protocol (MCP) Server for AWS Kafka
+Lists all MSK clusters in the current AWS region.
 
-    **Features:**
+Example usage:
+```python
+<use_mcp_tool>
+<server_name>awslabs.msk-mcp-server</server_name>
+<tool_name>ListClusters</tool_name>
+<arguments>
+{}
+</arguments>
+</use_mcp_tool>
+```
 
-    - Feature one
-    - Feature two
-    - ...
+Returns information about each cluster including:
+- ClusterName
+- ClusterArn
+- Status
+- CreationTime
 
-    Instructions for using this msk MCP server. This can be used by clients to improve the LLM's understanding of available tools, resources, etc. It can be thought of like a 'hint' to the model. For example, this information MAY be added to the system prompt. Important to be clear, direct, and detailed.
+### GetClusterInfo
 
-    [Learn more about the msk MCP Server](servers/msk-mcp-server.md)
-    ```
+Gets detailed information about a specific MSK cluster.
 
-* [ ] Submit a PR and pass all the checks
+Example usage:
+```python
+<use_mcp_tool>
+<server_name>awslabs.msk-mcp-server</server_name>
+<tool_name>GetClusterInfo</tool_name>
+<arguments>
+{
+  "cluster_arn": "your-cluster-arn"
+}
+</arguments>
+</use_mcp_tool>
+```
+
+Returns detailed cluster information including:
+- ClusterName
+- Status
+- BrokerCount
+- ZookeeperConnectString
+- BootstrapBrokerString
+- EncryptionInfo
+- EnhancedMonitoring
+- Tags
+- CreationTime
+
+### GetBrokerInfo
+
+Gets information about all brokers in a specific MSK cluster.
+
+Example usage:
+```python
+<use_mcp_tool>
+<server_name>awslabs.msk-mcp-server</server_name>
+<tool_name>GetBrokerInfo</tool_name>
+<arguments>
+{
+  "cluster_arn": "your-cluster-arn"
+}
+</arguments>
+</use_mcp_tool>
+```
+
+Returns information about each broker including:
+- BrokerId
+- BrokerType
+- InstanceType
+- ClientSubnet
+- SecurityGroups
+- Status
+
+## Installation Placeholder
+
+The instructions section is under development
